@@ -3,36 +3,52 @@ import { NextResponse } from 'next/server';
 export async function POST(request) {
   try {
     const { messages } = await request.json();
-    const lastUserMessage = messages[messages.length - 1]?.text || "";
+    
+    // Format messages for Anthropic API (needs strictly user/assistant roles)
+    const formattedMessages = messages.map(msg => ({
+      role: msg.role === 'sensei' ? 'assistant' : 'user',
+      content: msg.text
+    }));
 
-    const systemPrompt = `You are PsycheSensei. You are a cold, calm, minimalist Socratic explorer. You are NOT a therapist, teacher, or coach.
-RULES:
-1. NEVER offer solutions, actionable strategies, or life steps.
-2. NEVER use self-help words like "should", "must", "improve", or "fix".
-3. Keep answers strictly bounded to 1 or 2 deep, precise questions that uncover structural premises.
-4. If the user presents stress about time or value, decouple their identity from standard societal timelines immediately.`;
+    const systemPrompt = `You are the intelligence routing the PsycheSensei platform. You are a philosophical explorer. You are NOT a therapist, life coach, or teacher. 
+CORE RULES:
+1. NEVER offer solutions, actionable steps, or life advice.
+2. NEVER use the words "should", "must", "improve", or "fix".
+3. NEVER judge or validate a user's action as "good" or "bad".
+4. If a user states an absolute fact about their life, identify the underlying assumption and ask a single, concise question to challenge it.
+5. Limit responses to a maximum of two sentences.`;
 
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${process.env.AI_API_KEY}`
+        'x-api-key': process.env.ANTHROPIC_API_KEY,
+        'anthropic-version': '2023-06-01'
       },
       body: JSON.stringify({
-        model: 'gpt-4o-mini',
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: lastUserMessage }
-        ],
+        model: 'claude-3-5-sonnet-20240620',
+        system: systemPrompt,
+        messages: formattedMessages,
         max_tokens: 150,
         temperature: 0.6
       })
     });
 
     const data = await response.json();
-    const replyText = data.choices[0]?.message?.content || "What core truth are we avoiding here?";
+    
+    if (data.error) {
+      console.error("Anthropic Error:", data.error);
+      throw new Error(data.error.message);
+    }
+
+    const replyText = data.content[0].text;
     return NextResponse.json({ text: replyText });
+    
   } catch (error) {
-    return NextResponse.json({ text: "Connection thin. What happens if we look at this thought without needing immediate response?" });
+    return NextResponse.json(
+      { text: "My API connection is severed. You need to add the ANTHROPIC_API_KEY in Vercel settings so I can think." },
+      { status: 500 }
+    );
   }
 }
+
